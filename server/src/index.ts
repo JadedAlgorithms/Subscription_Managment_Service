@@ -52,10 +52,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
 // ------------------------------------------------------------------------------
-// API Routes
+// API Routes (Mounted on both /api and /api/v1 for seamless routing)
 // ------------------------------------------------------------------------------
 
-app.use(API_PREFIX, apiRouter);
+app.use('/api', apiRouter);
+if (API_PREFIX !== '/api') {
+  app.use(API_PREFIX, apiRouter);
+}
 
 // Fallback Root Route
 app.get('/', (_req: Request, res: Response) => {

@@ -1,11 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { healthRouter } from './health.js';
+import { authRouter } from './auth.routes.js';
+import { productRouter, planRouter } from './product.routes.js';
+import { subscriptionRouter, templateRouter } from './subscription.routes.js';
+import { portalRouter } from './portal.routes.js';
 import { prisma } from '../lib/prisma.js';
 import { ApiResponse, DashboardSummaryDto } from '../types/index.js';
 
 export const apiRouter = Router();
 
-// Root API information route (/api/v1)
+// Root API information route (/api or /api/v1)
 apiRouter.get('/', (_req: Request, res: Response<ApiResponse>) => {
   res.status(200).json({
     success: true,
@@ -17,6 +21,12 @@ apiRouter.get('/', (_req: Request, res: Response<ApiResponse>) => {
         health: '/api/v1/health',
         overview: '/api/v1/overview',
         dashboardSummary: '/api/v1/dashboard/summary',
+        auth: '/api/v1/auth',
+        products: '/api/v1/products',
+        plans: '/api/v1/plans',
+        subscriptions: '/api/v1/subscriptions',
+        templates: '/api/v1/templates',
+        portal: '/api/v1/portal',
       },
     },
     meta: {
@@ -26,8 +36,16 @@ apiRouter.get('/', (_req: Request, res: Response<ApiResponse>) => {
   });
 });
 
-// Mount Health Check
+// Mount System Health & Telemetry
 apiRouter.use('/health', healthRouter);
+
+// Mount Phase 2 Domain Modules
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/products', productRouter);
+apiRouter.use('/plans', planRouter);
+apiRouter.use('/subscriptions', subscriptionRouter);
+apiRouter.use('/templates', templateRouter);
+apiRouter.use('/portal', portalRouter);
 
 /**
  * Phase 1 System Overview & Schema Metadata API
