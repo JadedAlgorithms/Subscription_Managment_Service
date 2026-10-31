@@ -1,0 +1,459 @@
+// ==============================================================================
+// BRIGHTLOOP SUBSCRIPTION MANAGEMENT SYSTEM - DATABASE SCHEMA (PRISMA ORM)
+// ==============================================================================
+// Architecture: PostgreSQL with Prisma ORM
+// Compliance: Acid guarantees, high-precision Decimals for financial calculations,
+// idempotency constraints for recurring billing, and explicit performance indices.
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------------------
+// 1. ENUMS (DOMAIN DEFINITIONS)
+// ------------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum ProductType {
+  SERVICE
+  SOFTWARE
+  HARDWARE
+  CONSUMABLE
+}
+
+enum BillingFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  DRAFT
+  QUOTATION
+  CONFIRMED
+  ACTIVE
+  CLOSED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  CONFIRMED
+  PAID
+  CANCELLED
+}
+
+enum DiscountType {
+  FIXED
+  PERCENTAGE
+}
+
+enum DiscountScope {
+  PRODUCT
+  SUBSCRIPTION
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CREDIT_CARD
+  DEBIT_CARD
+  CASH
+  CHECK
+  ONLINE_GATEWAY
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ------------------------------------------------------------------------------
+// 2. USERS & ACCESS CONTROL (AUTH & RBAC)
+// ------------------------------------------------------------------------------
+
+model User {
+  id               String               @id @default(uuid())
+  email            String               @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  companyName      String?
+  phone            String?
+  role             UserRole             @default(CUSTOMER)
+  isActive         Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  // Relational mappings
+  subscriptions    Subscription[]       @relation("CustomerSubscriptions")
+  invoices         Invoice[]            @relation("CustomerInvoices")
+  paymentsMade     Payment[]            @relation("CustomerPayments")
+  paymentsRecorded Payment[]            @relation("StaffRecordedPayments")
+  createdDiscounts DiscountRule[]       @relation("AdminCreatedDiscounts")
+  createdTaxRules  TaxRule[]            @relation("AdminCreatedTaxRules")
+  createdTemplates QuotationTemplate[]  @relation("StaffCreatedTemplates")
+  passwordResets   PasswordResetToken[]
+
+  // High-cardinality lookups & RBAC filtering
+  @@index([email])
+  @@index([role])
+  @@index([role, isActive])
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ------------------------------------------------------------------------------
+// 3. PRODUCTS & VARIANTS
+// ------------------------------------------------------------------------------
+
+model Product {
+  id                     String                  @id @default(uuid())
+  name                   String
+  code                   String                  @unique
+  type                   ProductType             @default(SOFTWARE)
+  salesPrice             Decimal                 @db.Decimal(12, 2)
+  costPrice              Decimal                 @db.Decimal(12, 2)
+  notes                  String?                 @db.Text
+  isActive               Boolean                 @default(true)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  // Relational mappings
+  variants               ProductVariant[]
+  subscriptionLineItems  SubscriptionLineItem[]
+  invoiceLineItems       InvoiceLineItem[]
+  discountRules          DiscountRule[]
+  templateItems          QuotationTemplateItem[]
+
+  @@index([code])
+  @@index([type])
+  @@index([isActive])
+  @@map("products")
+}
+
+model ProductVariant {
+  id                    String                  @id @default(uuid())
+  productId             String
+  product               Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name                  String                  // e.g., "Odoo Brand Integration", "Enterprise Edition"
+  sku                   String                  @unique
+  priceSurcharge        Decimal                 @default(0.00) @db.Decimal(12, 2)
+  notes                 String?                 @db.Text
+  isActive              Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  // Relational mappings
+  subscriptionLineItems SubscriptionLineItem[]
+  invoiceLineItems      InvoiceLineItem[]
+  templateItems         QuotationTemplateItem[]
+
+  @@index([productId])
+  @@index([sku])
+  @@map("product_variants")
+}
+
+// ------------------------------------------------------------------------------
+// 4. PLANS & BILLING CADENCE
+// ------------------------------------------------------------------------------
+
+model Plan {
+  id                 String              @id @default(uuid())
+  name               String
+  code               String              @unique // e.g. "SAAS-ENTERPRISE-MONTHLY"
+  description        String?             @db.Text
+  billingFrequency   BillingFrequency    @default(MONTHLY)
+  minimumQuantity    Int                 @default(1)
+  validityDays       Int?                // e.g., 365 days
+  startDate          DateTime?
+  endDate            DateTime?
+  autoClose          Boolean             @default(false)
+  allowPause         Boolean             @default(true)
+  allowRenew         Boolean             @default(true)
+  price              Decimal             @db.Decimal(12, 2)
+  currency           String              @default("USD")
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  // Relational mappings
+  subscriptions      Subscription[]
+  quotationTemplates QuotationTemplate[]
+
+  @@index([code])
+  @@index([billingFrequency])
+  @@index([isActive])
+  @@map("plans")
+}
+
+// ------------------------------------------------------------------------------
+// 5. QUOTATIONS & SUBSCRIPTIONS (QUOTE-TO-CASH ENGINE)
+// ------------------------------------------------------------------------------
+
+model Subscription {
+  id                 String                 @id @default(uuid())
+  subscriptionNumber String                 @unique // Unique business code e.g. "SUB-2026-0001"
+  customerId         String
+  customer           User                   @relation("CustomerSubscriptions", fields: [customerId], references: [id], onDelete: Restrict)
+  planId             String
+  plan               Plan                   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status             SubscriptionStatus     @default(DRAFT)
+  paymentTerms       String                 @default("Net 30") // e.g. "Immediate", "Net 15", "Net 30"
+  startDate          DateTime?
+  expiryDate         DateTime?
+  nextBillingDate    DateTime?
+  autoRenew          Boolean                @default(true)
+  notes              String?                @db.Text
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  // Relational mappings
+  lineItems          SubscriptionLineItem[]
+  invoices           Invoice[]
+
+  // High-performance filtering & lookup indexes
+  @@index([customerId])
+  @@index([status])
+  @@index([customerId, status])
+  @@index([nextBillingDate])
+  @@index([expiryDate])
+  @@map("subscriptions")
+}
+
+model SubscriptionLineItem {
+  id             String          @id @default(uuid())
+  subscriptionId String
+  subscription   Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variantId      String?
+  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quantity       Int             @default(1)
+  unitPrice      Decimal         @db.Decimal(12, 2)
+  taxRate        Decimal         @default(0.00) @db.Decimal(5, 2) // e.g. 10.00 for 10%
+  taxAmount      Decimal         @default(0.00) @db.Decimal(12, 2)
+  discountAmount Decimal         @default(0.00) @db.Decimal(12, 2)
+  subtotal       Decimal         @db.Decimal(12, 2)
+  totalAmount    Decimal         @db.Decimal(12, 2)
+  notes          String?         @db.Text
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([subscriptionId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("subscription_line_items")
+}
+
+// ------------------------------------------------------------------------------
+// 6. INVOICES & RECURRING BILLING ENGINE
+// ------------------------------------------------------------------------------
+
+model Invoice {
+  id                 String            @id @default(uuid())
+  invoiceNumber      String            @unique // e.g. "INV-2026-0001"
+  subscriptionId     String
+  subscription       Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  customerId         String
+  customer           User              @relation("CustomerInvoices", fields: [customerId], references: [id], onDelete: Restrict)
+  status             InvoiceStatus     @default(DRAFT)
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  issueDate          DateTime          @default(now())
+  dueDate            DateTime
+  subtotal           Decimal           @db.Decimal(12, 2)
+  taxAmount          Decimal           @db.Decimal(12, 2)
+  discountAmount     Decimal           @default(0.00) @db.Decimal(12, 2)
+  totalAmount        Decimal           @db.Decimal(12, 2)
+  amountPaid         Decimal           @default(0.00) @db.Decimal(12, 2)
+  balanceDue         Decimal           @db.Decimal(12, 2)
+  currency           String            @default("USD")
+  notes              String?           @db.Text
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  // Relational mappings
+  lineItems          InvoiceLineItem[]
+  payments           Payment[]
+
+  // IDEMPOTENCY KEY: Guarantees zero duplicate billing runs for a subscription period
+  @@unique([subscriptionId, billingPeriodStart], name: "subscription_billing_period_unique")
+
+  // High-performance reporting & overdue queries (< 2-second finance dashboard requirement)
+  @@index([status, dueDate])
+  @@index([customerId, status])
+  @@index([subscriptionId])
+  @@index([issueDate])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id             String          @id @default(uuid())
+  invoiceId      String
+  invoice        Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId      String?
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId      String?
+  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  description    String
+  quantity       Int             @default(1)
+  unitPrice      Decimal         @db.Decimal(12, 2)
+  taxRate        Decimal         @default(0.00) @db.Decimal(5, 2)
+  taxAmount      Decimal         @default(0.00) @db.Decimal(12, 2)
+  discountAmount Decimal         @default(0.00) @db.Decimal(12, 2)
+  totalAmount    Decimal         @db.Decimal(12, 2)
+  createdAt      DateTime        @default(now())
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("invoice_line_items")
+}
+
+// ------------------------------------------------------------------------------
+// 7. DISCOUNTS & PROMOTIONAL RULES
+// ------------------------------------------------------------------------------
+
+model DiscountRule {
+  id                String        @id @default(uuid())
+  code              String        @unique // e.g. "BRIGHTLOOP-ENTERPRISE-10"
+  description       String?       @db.Text
+  type              DiscountType  @default(PERCENTAGE)
+  value             Decimal       @db.Decimal(12, 2) // Fixed numeric or percentage (e.g., 10.00 for 10%)
+  scope             DiscountScope @default(SUBSCRIPTION)
+  targetProductId   String?
+  targetProduct     Product?      @relation(fields: [targetProductId], references: [id], onDelete: SetNull)
+  minPurchaseAmount Decimal?      @default(0.00) @db.Decimal(12, 2)
+  minQuantity       Int?          @default(1)
+  maxUsage          Int?          // Null represents infinite usages
+  usageCount        Int           @default(0)
+  startDate         DateTime?
+  endDate           DateTime?
+  isActive          Boolean       @default(true)
+  createdById       String
+  createdBy         User          @relation("AdminCreatedDiscounts", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([code])
+  @@index([scope])
+  @@index([isActive, startDate, endDate])
+  @@map("discount_rules")
+}
+
+// ------------------------------------------------------------------------------
+// 8. TAX RULES (CONFIGURABLE TAX ENGINE)
+// ------------------------------------------------------------------------------
+
+model TaxRule {
+  id          String   @id @default(uuid())
+  name        String   // e.g. "Standard State Sales Tax (8.25%)"
+  rate        Decimal  @db.Decimal(5, 2)
+  isCompound  Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation("AdminCreatedTaxRules", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("tax_rules")
+}
+
+// ------------------------------------------------------------------------------
+// 9. QUOTATION TEMPLATES
+// ------------------------------------------------------------------------------
+
+model QuotationTemplate {
+  id                  String                  @id @default(uuid())
+  name                String                  // e.g. "SaaS Starter Bundle Quotation"
+  code                String                  @unique // e.g. "TMPL-SAAS-START"
+  description         String?                 @db.Text
+  planId              String
+  plan                Plan                    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  defaultPaymentTerms String                  @default("Net 30")
+  validityDays        Int                     @default(30)
+  isActive            Boolean                 @default(true)
+  createdById         String
+  createdBy           User                    @relation("StaffCreatedTemplates", fields: [createdById], references: [id], onDelete: Restrict)
+  items               QuotationTemplateItem[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+  @@map("quotation_templates")
+}
+
+model QuotationTemplateItem {
+  id          String            @id @default(uuid())
+  templateId  String
+  template    QuotationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variantId   String?
+  variant     ProductVariant?   @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quantity    Int               @default(1)
+  discountPct Decimal           @default(0.00) @db.Decimal(5, 2)
+  createdAt   DateTime          @default(now())
+
+  @@index([templateId])
+  @@map("quotation_template_items")
+}
+
+// ------------------------------------------------------------------------------
+// 10. PAYMENTS & AUDIT RECONCILIATION
+// ------------------------------------------------------------------------------
+
+model Payment {
+  id                   String        @id @default(uuid())
+  paymentNumber        String        @unique // e.g. "PAY-2026-0001"
+  invoiceId            String
+  invoice              Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  customerId           String
+  customer             User          @relation("CustomerPayments", fields: [customerId], references: [id], onDelete: Restrict)
+  amount               Decimal       @db.Decimal(12, 2)
+  paymentMethod        PaymentMethod
+  status               PaymentStatus @default(COMPLETED)
+  transactionReference String?       // External bank transaction ID or gateway ref
+  paidAt               DateTime      @default(now())
+  auditNotes           String?       @db.Text
+  createdById          String
+  recordedBy           User          @relation("StaffRecordedPayments", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([paidAt])
+  @@index([status])
+  @@map("payments")
+}
+
