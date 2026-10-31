@@ -9,6 +9,9 @@ import { RegisterPage } from './pages/auth/RegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ProductsPage } from './pages/admin/ProductsPage';
 import { SubscriptionBuilderPage } from './pages/admin/SubscriptionBuilderPage';
+import { BillingCenterPage } from './pages/admin/BillingCenterPage';
+import { DiscountsPage } from './pages/admin/DiscountsPage';
+import { FinanceDashboardPage } from './pages/admin/FinanceDashboardPage';
 import { CustomerPortalPage } from './pages/portal/CustomerPortalPage';
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
@@ -80,6 +83,9 @@ export default function App() {
             <Route path="/admin/products" element={<ProductsPage />} />
             <Route path="/admin/subscriptions/new" element={<SubscriptionBuilderPage />} />
             <Route path="/admin/subscriptions" element={<SubscriptionBuilderPage />} />
+            <Route path="/admin/billing" element={<BillingCenterPage />} />
+            <Route path="/admin/discounts" element={<DiscountsPage />} />
+            <Route path="/admin/finance" element={<FinanceDashboardPage />} />
           </Route>
 
           {/* Protected Customer Portal Routes */}

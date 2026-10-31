@@ -4,6 +4,9 @@ import { authRouter } from './auth.routes.js';
 import { productRouter, planRouter } from './product.routes.js';
 import { subscriptionRouter, templateRouter } from './subscription.routes.js';
 import { portalRouter } from './portal.routes.js';
+import { billingRouter } from './billing.routes.js';
+import { paymentRouter } from './payment.routes.js';
+import { financeRouter } from './finance.routes.js';
 import { prisma } from '../lib/prisma.js';
 import { ApiResponse, DashboardSummaryDto } from '../types/index.js';
 
@@ -27,6 +30,9 @@ apiRouter.get('/', (_req: Request, res: Response<ApiResponse>) => {
         subscriptions: '/api/v1/subscriptions',
         templates: '/api/v1/templates',
         portal: '/api/v1/portal',
+        billing: '/api/v1/billing',
+        payments: '/api/v1/payments',
+        finance: '/api/v1/finance',
       },
     },
     meta: {
@@ -39,13 +45,16 @@ apiRouter.get('/', (_req: Request, res: Response<ApiResponse>) => {
 // Mount System Health & Telemetry
 apiRouter.use('/health', healthRouter);
 
-// Mount Phase 2 Domain Modules
+// Mount Domain Modules
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/products', productRouter);
 apiRouter.use('/plans', planRouter);
 apiRouter.use('/subscriptions', subscriptionRouter);
 apiRouter.use('/templates', templateRouter);
 apiRouter.use('/portal', portalRouter);
+apiRouter.use('/billing', billingRouter);
+apiRouter.use('/payments', paymentRouter);
+apiRouter.use('/finance', financeRouter);
 
 /**
  * Phase 1 System Overview & Schema Metadata API

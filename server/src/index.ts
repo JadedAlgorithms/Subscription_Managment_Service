@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, AppError } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/requestLogger.js';
+import { initBillingCron } from './services/billing.service.js';
 
 // Load environment configuration
 dotenv.config();
@@ -98,6 +99,9 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(` API Base: http://localhost:${PORT}${API_PREFIX}`);
     console.log(` Health:   http://localhost:${PORT}${API_PREFIX}/health`);
     console.log(`====================================================`);
+
+    // Initialize automated daily billing cron scheduler
+    initBillingCron();
   });
 }
 

@@ -8,7 +8,9 @@ import {
   Printer,
   X,
   CreditCard,
-  Zap
+  Zap,
+  PauseCircle,
+  CheckCircle2
 } from 'lucide-react';
 import {
   SubscriptionModel,
@@ -16,6 +18,7 @@ import {
   SubscriptionStatus,
   InvoiceStatus,
 } from '../../types';
+import { PaymentModal } from '../../components/PaymentModal';
 
 interface CustomerPortalPageProps {
   initialTab?: 'subscriptions' | 'invoices';
@@ -29,9 +32,14 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
   const [invoices, setInvoices] = useState<InvoiceModel[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   // Selected Invoice Modal State
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceModel | null>(null);
+
+  // Payment Modal State
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceModel | null>(null);
+  const [isPaymentOpen, setIsPaymentOpen] = useState<boolean>(false);
 
   const fetchPortalData = useCallback(async () => {
     setLoading(true);
@@ -58,6 +66,29 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
     fetchPortalData();
   }, [fetchPortalData]);
 
+  // Handle Pause / Lifecycle Toggle
+  const handleLifecycleAction = async (subscriptionId: string, action: string) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/subscriptions/${subscriptionId}/lifecycle`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `Failed to execute ${action}.`);
+
+      setSuccess(json.message);
+      fetchPortalData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Error during ${action}.`);
+    }
+  };
+
   const getSubStatusBadge = (status: SubscriptionStatus) => {
     switch (status) {
       case SubscriptionStatus.ACTIVE:
@@ -78,7 +109,7 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
       case InvoiceStatus.PAID:
         return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
       case InvoiceStatus.CONFIRMED:
-        return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+        return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
       case InvoiceStatus.DRAFT:
         return 'bg-slate-800 text-slate-300 border-slate-700';
       case InvoiceStatus.CANCELLED:
@@ -127,11 +158,18 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
         </div>
       </div>
 
-      {/* Error Alert */}
+      {/* Alerts */}
       {error && (
         <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {success && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center space-x-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{success}</span>
         </div>
       )}
 
@@ -183,7 +221,7 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
                     </div>
 
                     {/* Timeline & Metadata */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800/80 text-xs font-mono">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800/80 text-xs font-mono">
                       <div>
                         <div className="text-slate-500 text-[11px]">Start Date</div>
                         <div className="text-slate-200">
@@ -198,8 +236,14 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
                       </div>
                       <div>
                         <div className="text-slate-500 text-[11px]">Auto Renew</div>
-                        <div className={sub.autoRenew ? 'text-emerald-400' : 'text-slate-500'}>
+                        <div className={sub.autoRenew ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
                           {sub.autoRenew ? 'Enabled' : 'Disabled'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 text-[11px]">Allow Pause</div>
+                        <div className={sub.plan?.allowPause ? 'text-emerald-400' : 'text-slate-600'}>
+                          {sub.plan?.allowPause ? 'Eligible' : 'Not Allowed'}
                         </div>
                       </div>
                     </div>
@@ -230,6 +274,19 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
                         </div>
                       </div>
                     )}
+
+                    {/* Customer Self-Service Actions */}
+                    {sub.status === SubscriptionStatus.ACTIVE && sub.plan?.allowPause && (
+                      <div className="pt-3 border-t border-slate-800 flex justify-end">
+                        <button
+                          onClick={() => handleLifecycleAction(sub.id, 'pause')}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition"
+                        >
+                          <PauseCircle className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Request Pause</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -255,42 +312,59 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Total Amount</th>
                       <th className="py-3 px-4 text-right">Balance Due</th>
-                      <th className="py-3 px-4 text-center">Action</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-mono">
-                    {invoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-850/40">
-                        <td className="py-3 px-4 font-bold text-white">{inv.invoiceNumber}</td>
-                        <td className="py-3 px-4 text-slate-300">
-                          {new Date(inv.issueDate).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-4 text-slate-400">
-                          {new Date(inv.dueDate).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getInvStatusBadge(inv.status)}`}>
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-white">
-                          ${Number(inv.totalAmount).toFixed(2)}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className={Number(inv.balanceDue) > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                            ${Number(inv.balanceDue).toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => setSelectedInvoice(inv)}
-                            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-lg text-xs font-medium transition"
-                          >
-                            View Breakdown
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {invoices.map((inv) => {
+                      const bal = Number(inv.balanceDue);
+                      return (
+                        <tr key={inv.id} className="hover:bg-slate-850/40">
+                          <td className="py-3 px-4 font-bold text-white">{inv.invoiceNumber}</td>
+                          <td className="py-3 px-4 text-slate-300">
+                            {new Date(inv.issueDate).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4 text-slate-400">
+                            {new Date(inv.dueDate).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getInvStatusBadge(inv.status)}`}>
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-white">
+                            ${Number(inv.totalAmount).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className={bal > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                              ${bal.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center space-x-2">
+                              <button
+                                onClick={() => setSelectedInvoice(inv)}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-lg text-xs font-medium transition"
+                              >
+                                View Breakdown
+                              </button>
+                              {bal > 0 && inv.status !== InvoiceStatus.CANCELLED && (
+                                <button
+                                  onClick={() => {
+                                    setPaymentInvoice(inv);
+                                    setIsPaymentOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-lg text-xs font-semibold shadow-sm shadow-emerald-500/20 flex items-center space-x-1 transition"
+                                >
+                                  <CreditCard className="w-3 h-3" />
+                                  <span>Pay Online</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -299,7 +373,7 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
         </div>
       )}
 
-      {/* Invoice Breakdown & Printable Modal */}
+      {/* Invoice Breakdown Modal */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 sm:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -394,6 +468,12 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
                 <span>Tax:</span>
                 <span>${Number(selectedInvoice.taxAmount).toFixed(2)}</span>
               </div>
+              {Number(selectedInvoice.discountAmount) > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Applied Discount:</span>
+                  <span>-${Number(selectedInvoice.discountAmount).toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-400">
                 <span>Amount Paid:</span>
                 <span>${Number(selectedInvoice.amountPaid).toFixed(2)}</span>
@@ -406,25 +486,35 @@ export const CustomerPortalPage: React.FC<CustomerPortalPageProps> = ({ initialT
               </div>
             </div>
 
-            {/* Payments Log */}
-            {selectedInvoice.payments && selectedInvoice.payments.length > 0 && (
-              <div className="space-y-2 text-xs font-mono">
-                <span className="text-slate-400 flex items-center gap-1.5 font-semibold">
-                  <CreditCard className="w-3.5 h-3.5 text-emerald-400" /> Payment Reconciliation Record
-                </span>
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 divide-y divide-slate-800/60">
-                  {selectedInvoice.payments.map((p) => (
-                    <div key={p.id} className="py-1.5 flex justify-between text-slate-300">
-                      <span>{p.paymentMethod} • Ref: {p.transactionReference || 'N/A'}</span>
-                      <span className="text-emerald-400 font-bold">${Number(p.amount).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Online Settlement Button inside Modal */}
+            {Number(selectedInvoice.balanceDue) > 0 && (
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => {
+                    setPaymentInvoice(selectedInvoice);
+                    setSelectedInvoice(null);
+                    setIsPaymentOpen(true);
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-500/20 flex items-center space-x-2 transition"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Pay Now (${Number(selectedInvoice.balanceDue).toFixed(2)})</span>
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {/* Online Payment Modal */}
+      <PaymentModal
+        invoice={paymentInvoice}
+        isOpen={isPaymentOpen}
+        onClose={() => setIsPaymentOpen(false)}
+        onPaymentSuccess={() => {
+          fetchPortalData();
+        }}
+      />
     </div>
   );
 };

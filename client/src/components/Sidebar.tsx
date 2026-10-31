@@ -9,7 +9,10 @@ import {
   UserCheck,
   Shield,
   FilePlus2,
-  CalendarCheck2
+  CalendarCheck2,
+  TrendingUp,
+  Tag,
+  Zap
 } from 'lucide-react';
 import { UserRole } from '../types';
 
@@ -58,6 +61,21 @@ export const Sidebar: React.FC = () => {
                   <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
                   <span>Subscriptions List</span>
                 </NavLink>
+
+                <NavLink to="/admin/billing" className={linkClass}>
+                  <Zap className="w-4 h-4 text-amber-300" />
+                  <span>Billing Center</span>
+                </NavLink>
+
+                <NavLink to="/admin/discounts" className={linkClass}>
+                  <Tag className="w-4 h-4 text-indigo-400" />
+                  <span>Discount Rules</span>
+                </NavLink>
+
+                <NavLink to="/admin/finance" className={linkClass}>
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <span>Finance Dashboard</span>
+                </NavLink>
               </>
             ) : (
               <>
@@ -75,16 +93,16 @@ export const Sidebar: React.FC = () => {
           </nav>
         </div>
 
-        {/* Phase 2 Highlights Box */}
+        {/* Phase 3 Highlights Box */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3.5 text-xs space-y-2">
           <div className="flex items-center space-x-2 text-sky-400 font-semibold">
             <Layers className="w-3.5 h-3.5" />
-            <span>Phase 2 Active</span>
+            <span>Phase 3 Engine</span>
           </div>
           <p className="text-slate-400 text-[11px] leading-relaxed">
             {isInternalStaff
-              ? 'RBAC role checks, dynamic Odoo variant (+$560), and quote-to-cash state machine enabled.'
-              : 'Isolated self-service portal strictly scoped to your authorized customer account.'}
+              ? 'Automated cron billing runner, mathematical idempotency, Recharts revenue analytics & payment reconciliation active.'
+              : 'Self-service customer portal with online invoice settlement and subscription lifecycle management.'}
           </p>
         </div>
       </div>
