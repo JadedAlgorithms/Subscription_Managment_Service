@@ -18,6 +18,7 @@
     "db:migrate": "npm run db:migrate --workspace=server",
     "db:push": "npm run db:push --workspace=server",
     "db:seed": "npm run db:seed --workspace=server",
+    "db:start": "node scripts/start-postgres.mjs",
     "db:studio": "npm run db:studio --workspace=server",
     "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=client"
   },
@@ -34,7 +35,8 @@
   "author": "Brightloop Software Engineering",
   "license": "UNLICENSED",
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "embedded-postgres": "^18.6.0-beta.19"
   }
 }
 

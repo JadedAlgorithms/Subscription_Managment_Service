@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   X,
   Printer,
+  Download,
   CreditCard,
   Send,
   AlertCircle,
@@ -13,6 +14,7 @@ import {
   Receipt
 } from 'lucide-react';
 import { InvoiceModel, InvoiceStatus } from '../types';
+import { generateInvoicePdf } from '../utils/generateInvoicePdf';
 
 interface InvoiceDetailModalProps {
   invoice: InvoiceModel | null;
@@ -137,6 +139,14 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => generateInvoicePdf(invoice, invoice.customer)}
+              className="px-3 py-1.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white rounded-xl text-xs font-medium flex items-center space-x-1.5 shadow-md shadow-sky-500/20 transition"
+              title="Download Branded PDF Invoice"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PDF</span>
+            </button>
             <button
               onClick={() => window.print()}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium flex items-center space-x-1.5 transition"
